@@ -3,7 +3,6 @@ from flask_cors import CORS
 import pandas as pd
 import zipfile
 from datetime import datetime
-import numpy as np
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS

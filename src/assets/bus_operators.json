@@ -1,0 +1,13 @@
+{
+    "bus_operators":[
+        {
+            "name":"Stagecoach",
+            "colour":"#0065a4"
+        },
+        {
+            "name":"Arriva",
+            "colour":"#009fe3"
+        }
+    ]
+
+}

@@ -3,7 +3,6 @@ from flask_cors import CORS
 import pandas as pd
 import zipfile
 from datetime import datetime
-import numpy as np
 
 
 app = Flask(__name__)
@@ -101,4 +100,3 @@ def get_gtfs_data():
 
 if __name__ == '__main__':
     app.run(debug=True)
-

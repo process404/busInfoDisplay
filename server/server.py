@@ -3,6 +3,7 @@ from flask_cors import CORS
 import pandas as pd
 import zipfile
 from datetime import datetime
+from flask import request
 
 
 app = Flask(__name__)
@@ -110,8 +111,26 @@ def process_gtfs(zip_path, lat_min, lat_max, long_min, long_max, banned_stop, ro
 
 @app.route('/gtfs-data', methods=['GET'])
 def get_gtfs_data():
-    processed_data = process_gtfs('../src/assets/itm_north_west_gtfs.zip', 53.55, 53.57, -2.89, -2.87, "Bus Station (Stand 0)", ['2A', '337', '312', '311', 'EL1', '5', '6', '152', '375', '385', '310'])
+    zip_path = request.args.get('zip_path')
+    lat_min = float(request.args.get('min_lat'))
+    lat_max = float(request.args.get('max_lat'))
+    long_min = float(request.args.get('min_long'))
+    long_max = float(request.args.get('max_long'))
+    banned_stop = request.args.get('bannedOnwardConnectionStop')
+    routes_to_include = request.args.getlist('routes_to_include[]')
+
+    print(zip_path, lat_min, lat_max, long_min, long_max, banned_stop,  routes_to_include)
+
+    processed_data = process_gtfs(zip_path, lat_min, lat_max, long_min, long_max, banned_stop, routes_to_include)
+
     return jsonify(processed_data)
+   
+
+@app.route('/tracking-data', methods=['GET'])
+def get_tracking_data():
+    print("hi")
+
+    return ("hi")
 
 if __name__ == '__main__':
     app.run(debug=True)

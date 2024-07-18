@@ -24,12 +24,15 @@
         <span class="loader"></span>
       </div>
       <div class="departures-list">
-        <div v-for="departure in this.realTimeDepartures.slice(0,3)" class="departure">
+        <div v-for="(departure, index) in this.realTimeDepartures.slice(0,this.realTimeSliceAmount)" :key="index" class="departure">
           <h2 :class="departure.displayOperator" class="route">{{ departure.route }}</h2>
           <div class="center">
             <h4 class="destination">{{ departure.destination }}</h4>
             <div class="scrolling-section">
-              <h5 class="operator" :class="{active : scrollingSection1 == 0}">{{ departure.operator }}</h5>
+              <h5 class="operator" :class="{active : scrollingSection1 == 0 || departure.minutesTo > 10}">{{ departure.operator }}</h5>
+              <h5 class="tracking-info" :class="{active : scrollingSection1 == 1 && departure.minutesTo < 10}">
+                {{this.realTimeTrackingUpdates.find(tracking => tracking.departureTime === departure.departureTime)?.trackingData}}
+              </h5>
             </div>
           </div>
           <div class="times">
@@ -46,6 +49,16 @@
 
 import axios from 'axios';
 import overrides from '@/assets/stop_override.json';
+
+const min_lat = 53.55
+const max_lat = 53.57
+const min_long = -2.89
+const max_long = -2.87
+const bannedOnwardConnectionStop = "Bus Station (Stand 0)"
+const timetables = ['../src/assets/itm_north_west_gtfs.zip']
+const routes_to_include = ['2A', '337', '312', '311', 'EL1', '5', '6', '152', '375', '385', '310']
+const no_tracking_routes = ['2A', '337', '312', '311', '5', '6', '152', '375', '385', '310']
+const realTimeSliceAmount = 3
 
 export default {
   data() {
@@ -67,6 +80,8 @@ export default {
       trainStationCRS: "OMS",
       trainData: null,
 
+      realTimeTrackingUpdates: [],
+
       timeToggle: true,
       currentTimeTogglePg: 0,
       loadingDepartures: true,
@@ -75,18 +90,52 @@ export default {
 
       scrollingSection1: 0,
       scrollingSection2: 0,
+      realTimeSliceAmount: realTimeSliceAmount,
     }
   },
   methods: {
     async fetchData() {
-      axios.get('http://localhost:5000/gtfs-data')
-        .then(response => {
-          this.apiData = response.data;
-          this.setupBoard();
-        })
-        .catch(error => {
-          console.error('There was an error fetching the GTFS data:', error);
+      axios.get('http://localhost:5000/gtfs-data', {
+        params: {
+          min_lat: min_lat,
+          max_lat: max_lat,
+          min_long: min_long,
+          max_long: max_long,
+          bannedOnwardConnectionStop: bannedOnwardConnectionStop,
+          zip_path: timetables[0],
+          routes_to_include: routes_to_include
+        }
+      })
+      .then(response => {
+        this.apiData = response.data;
+        this.setupBoard();
+      })
+      .catch(error => {
+        console.error('There was an error fetching the GTFS data:', error);
+      });
+    },
+    async getTrackingData(routeNumber){
+      if(no_tracking_routes.includes(routeNumber)){
+      console.warn(`Route ${routeNumber} is in the list of routes with disabled tracking`)
+      }else{
+      try {
+        const response = await axios.get('http://localhost:5000/tracking-data', {
+        params: {
+          min_lat: min_lat,
+          max_lat: max_lat,
+          min_long: min_long,
+          max_long: max_long,
+          routeNumber: routeNumber
+        }
         });
+        console.log(response.data);
+        // Assign the response data to a variable or use it in your code
+        const responseData = response.data;
+        return responseData
+      } catch (error) {
+        console.error('There was an error fetching the GTFS data:', error);
+      }
+      }
     },
     setupBoard(){
       const now = new Date();
@@ -232,13 +281,36 @@ export default {
 
       if (this.onwardConnectionDepartures.length === 0) {
         console.log("No onward connections found. Check if journey data, dates, and stop names are correct.");
-}else{
-  console.log("onward connections: ", this.onwardConnectionDepartures);
-}
+      }else{
+        console.log("onward connections: ", this.onwardConnectionDepartures);
+      }
 
 
       this.loadingDepartures = false;
       this.updateBoard();
+      this.setupTracking();
+    },
+    async setupTracking(){
+      const departures = this.realTimeDepartures.slice(0, realTimeSliceAmount);
+      for (const departure of departures) {
+        var data = await this.getTrackingData(departure.route);
+        console.log("data", data);  
+        if (data) {
+          this.realTimeTrackingUpdates.push({
+            route: departure.route,
+            dep_time: departure.departureTime,
+            trackingData: data
+          });
+        } else {
+          console.error('Error fetching tracking data for route:', departure.route);
+          this.realTimeTrackingUpdates.push({
+            route: departure.route,
+            dep_time: departure.departureTime,
+            trackingData: "Loading..."
+          });
+        }
+      }
+      console.log("Tracking updates:", this.realTimeTrackingUpdates);
     },
     updateLogic(){
       this.realTimeDepartures = [];
@@ -326,13 +398,13 @@ export default {
     },
     currentTimeLoop(){
       setInterval(() => {
-      let date = new Date();
-      let hours = date.getHours();
-      let minutes = date.getMinutes();
-      let day = date.getDate();
-      let month = date.getMonth() + 1;
-      this.currentTime = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-      this.currentDate = `${day}/${month}`;
+        let date = new Date();
+        let hours = date.getHours();
+        let minutes = date.getMinutes();
+        let day = date.getDate();
+        let month = date.getMonth() + 1;
+        this.currentTime = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+        this.currentDate = `${day}/${month}`;
       }, 1000);
 
     },
@@ -380,12 +452,21 @@ export default {
       setInterval(() => {
         this.sleep(5000)
         .then(() => {
-          this.scrollingSection1 = 0;
           this.scrollingSection2 = 1;
           this.sleep(5000)
           .then(() => {
-            this.scrollingSection1 = 0;
             this.scrollingSection2 = 0;
+          })
+        });
+      }, 10000);
+
+      setInterval(() => {
+        this.sleep(5000)
+        .then(() => {
+          this.scrollingSection1 = 1;
+          this.sleep(5000)
+          .then(() => {
+            this.scrollingSection1 = 0;
           })
         });
       }, 10000);
@@ -397,7 +478,7 @@ export default {
       this.timeToggler();
       this.scrollingSections();
       // Set up any other necessary intervals or events...
-  }
+  },   
 }
 </script>
 

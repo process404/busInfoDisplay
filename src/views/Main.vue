@@ -61,6 +61,7 @@ const timetables = config.timetables;
 const routes_to_include = config.routes_to_include;
 const no_tracking_routes = config.no_tracking_routes;
 const real_time_slice_amount = config.real_time_slice_amount;
+const GracePeriodTime = 2 // minutes
 
 export default {
   data() {
@@ -117,26 +118,43 @@ export default {
       });
     },
     async getTrackingData(routeNumber){
+      // Get the latitude and longitude of the stop with matching stop name
+      const stop = this.apiData['allStops'].find(stop => stop.stop_name === this.thisStop);
+      const allstops = this.apiData['allStops'].filter(stop => stop.stop_name !== this.thisStop);
+      const latitude = stop ? stop.stop_lat : null;
+      const longitude = stop ? stop.stop_lon : null;
+      
+      // Use the latitude and longitude in your code
+      console.log("Latitude:", latitude);
+      console.log("Longitude:", longitude);
+
       if(no_tracking_routes.includes(routeNumber)){
-      console.warn(`Route ${routeNumber} is in the list of routes with disabled tracking`)
+        console.warn(`Route ${routeNumber} is in the list of routes with disabled tracking`)
       }else{
-      try {
-        const response = await axios.get('http://localhost:5000/tracking-data', {
-        params: {
-          min_lat: min_lat,
-          max_lat: max_lat,
-          min_long: min_long,
-          max_long: max_long,
-          routeNumber: routeNumber
+        try {
+          const response = await axios.get('http://localhost:5000/tracking-data', {
+            params: {
+              min_lat: min_lat,
+              max_lat: max_lat,
+              min_long: min_long,
+              max_long: max_long,
+              this_stop_lat: latitude,
+              this_stop_long: longitude,
+              allstops: allstops,
+              routeNumber: routeNumber
+            },
+            headers: {
+              'Access-Control-Allow-Origin': '*'
+            }
+          });
+          console.log(response.data);
+          // Assign the response data to a variable or use it in your code
+          const responseData = response.data;
+          console.log("response data", responseData);
+          return responseData;
+        } catch (error) {
+          console.error('There was an error fetching the GTFS data:', error);
         }
-        });
-        console.log(response.data);
-        // Assign the response data to a variable or use it in your code
-        const responseData = response.data;
-        return responseData
-      } catch (error) {
-        console.error('There was an error fetching the GTFS data:', error);
-      }
       }
     },
     setupBoard(){
@@ -294,6 +312,7 @@ export default {
     },
     async setupTracking(){
       const departures = this.realTimeDepartures.slice(0, this.realTimeSliceAmount);
+
       for (const departure of departures) {
         var data = await this.getTrackingData(departure.route);
         console.log("data", data);  
@@ -301,16 +320,23 @@ export default {
           this.realTimeTrackingUpdates.push({
             route: departure.route,
             dep_time: departure.departureTime,
-            trackingData: data
+            status: data.status,
+            distance: data.distance,
+            time_estimate: data.time_estimate,
+            journey_percent: data.journey_percent,
           });
         } else {
           console.error('Error fetching tracking data for route:', departure.route);
           this.realTimeTrackingUpdates.push({
             route: departure.route,
             dep_time: departure.departureTime,
-            trackingData: "Loading..."
+            status: 'No data available',
+            distance: "No data available",
+            time_estimate: "No data available",
+            journey_percent: "No data available",
           });
         }
+        
       }
       console.log("Tracking updates:", this.realTimeTrackingUpdates);
     },
@@ -333,7 +359,11 @@ export default {
                 displayOperator = departure['operator'].split(" ")[0] + " " + departure['operator'].split(" ").slice(1).join("-")
             }
 
-          if (departureTime >= currentTime) {
+          const GracePeriod = GracePeriodTime * 60 * 1000; // 5 minutes in milliseconds
+
+          const timeDifference = departureTime.getTime() - currentTime.getTime();
+
+          if (timeDifference >= -GracePeriod) {
             if (!departure['destination'].includes(this.filteredDestination)){
               this.realTimeDepartures.push({
                 route: departure['route'],
@@ -366,6 +396,7 @@ export default {
           if(displayOperator.includes(" ")){
             displayOperator = departure['operator'].split(" ")[0] + " " + departure['operator'].split(" ").slice(1).join("-")
           }
+          
 
           if (departureTime >= currentTime) {
             if (!departure['destination'].includes(this.filteredDestination)) {

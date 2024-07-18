@@ -1,6 +1,7 @@
 {
     "stop_override":[
-        {"stop_name":"Edge Hill University", "route": "EL1","min_ph_override":[36,56,16]}
+        {"stop_name":"Edge Hill University", "route": "EL1","min_ph_override":[36,56,16]},
+        {"stop_name":"Bus Station (Stand 0)", "route": "EL1","min_ph_override":[19]}
     ],
     "route_override":[
         {"route":"152","operator":"Mixture"}

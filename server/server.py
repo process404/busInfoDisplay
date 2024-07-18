@@ -9,10 +9,10 @@ app = Flask(__name__)
 CORS(app)  # Enable CORS
 
 
-def process_gtfs(zip_path):
+def process_gtfs(zip_path, lat_min, lat_max, long_min, long_max, banned_stop, route_id_array):
     # Boundaries in case of duplicates in the region of the gtfs file
-    filter_lat_min, filter_lat_max = 53.55, 53.57
-    filter_long_min, filter_long_max = -2.89, -2.87
+    filter_lat_min, filter_lat_max = lat_min, lat_max
+    filter_long_min, filter_long_max = long_min, long_max
 
     # Open the GTFS zip file
     with zipfile.ZipFile(zip_path) as z:
@@ -36,7 +36,7 @@ def process_gtfs(zip_path):
     routes_with_agency = pd.merge(routes, agency, on='agency_id', how='left')
 
     # Filter routes for the specified route IDs
-    route_ids = ['2A', '337', '312', '311', 'EL1', '5', '6', '152', '375', '385']
+    route_ids = route_id_array
     filtered_routes = routes_with_agency[routes_with_agency['route_short_name'].isin(route_ids)]
 
     # Map trips to filtered routes
@@ -60,12 +60,24 @@ def process_gtfs(zip_path):
     routes_json = {}
     all_stops = {}
 
+
     for route_id, group in filter_trips.groupby('route_id'):
         route_info = filtered_routes[filtered_routes['route_id'] == route_id].iloc[0]
         route_name = route_info['route_short_name']
         operator_name = route_info['agency_name']  # Operator's name for the current route
         routes_json[route_name] = {'journeys': [], 'operator': operator_name}
+        
+        # Initialize a set to track processed trip_ids for the current route
+        processed_trip_ids = set()
+        
         for trip_id, trip_group in group.groupby('trip_id'):
+            # Check if trip_id has already been processed
+            if trip_id in processed_trip_ids:
+                continue  # Skip this trip_id as it's already processed
+            
+            # Add trip_id to the set of processed trip_ids
+            processed_trip_ids.add(trip_id)
+            
             trip_group_sorted = trip_group.sort_values(by='departure_time')
             trip_service_id = trip_group_sorted['service_id'].iloc[0]
             trip_no_service_dates_strings = no_service_dates[no_service_dates['service_id'] == trip_service_id]['date'].tolist()
@@ -74,8 +86,11 @@ def process_gtfs(zip_path):
                 'trip_id': trip_id,
                 'running_days': trip_group_sorted[['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']].iloc[0].to_dict(),
                 'stop_times': trip_group_sorted[['arrival_time', 'departure_time', 'stop_name']].to_dict('records'),
-                'no_service_dates': trip_no_service_dates
+                'no_service_dates': trip_no_service_dates,
+                'destination': trip_group_sorted['trip_headsign'].iloc[0]  # Add the destination to the journey
             }
+
+            print(route_name, journey.get('running_days'))
             routes_json[route_name]['journeys'].append(journey)
             for stop_time in journey['stop_times']:
                 stop_name = stop_time['stop_name']
@@ -84,7 +99,7 @@ def process_gtfs(zip_path):
                 all_stops[stop_name]['routes'].add(route_name)
 
     # Convert all_stops to the required list format and include route names as a list
-    all_stops_list = [{'stop_name': k, 'routes': list(v['routes'])} for k, v in all_stops.items()]
+    all_stops_list = [{'stop_name': k, 'routes': list(v['routes'])} for k, v in all_stops.items() if k.lower() != banned_stop.lower()]
 
     # Combine routes_json and all_stops_list into the final structure
     final_structure = {"routes": routes_json, "allStops": all_stops_list}
@@ -95,7 +110,7 @@ def process_gtfs(zip_path):
 
 @app.route('/gtfs-data', methods=['GET'])
 def get_gtfs_data():
-    processed_data = process_gtfs('../src/assets/itm_north_west_gtfs.zip')
+    processed_data = process_gtfs('../src/assets/itm_north_west_gtfs.zip', 53.55, 53.57, -2.89, -2.87, "Bus Station (Stand 0)", ['2A', '337', '312', '311', 'EL1', '5', '6', '152', '375', '385', '310'])
     return jsonify(processed_data)
 
 if __name__ == '__main__':

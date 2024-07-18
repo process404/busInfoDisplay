@@ -23,6 +23,21 @@
         <h2>Loading...</h2>
         <span class="loader"></span>
       </div>
+      <div class="departures-list">
+        <div v-for="departure in this.realTimeDepartures.slice(0,3)" class="departure">
+          <h2 :class="departure.displayOperator" class="route">{{ departure.route }}</h2>
+          <div class="center">
+            <h4 class="destination">{{ departure.destination }}</h4>
+            <div class="scrolling-section">
+              <h5 class="operator" :class="{active : scrollingSection1 == 0}">{{ departure.operator }}</h5>
+            </div>
+          </div>
+          <div class="times">
+            <h5 class="minutes" :class="{active : scrollingSection2 == 0}">{{ departure.minutesTo }} min</h5>
+            <h5 class="departure_time" :class="{active : scrollingSection2 == 1}">{{ departure.departureTime.slice(0,5) }}</h5>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -36,20 +51,30 @@ export default {
   data() {
     return {
       thisStop: "Edge Hill University",
-      displayName: "Edge Hill University",
-      onwardStopsName: "Bus Station",
-      onwardStopDisplay: "Ormskirk Bus Station",
+      displayName: "Edge Hill (Forest Court)",
+      onwardConnectionsStopsName: "Bus Station",
+      onwardConnectionsStopsDisplay: "Ormskirk Bus Station",
+      filteredDestination: "Ormskirk", // Exclude buses with destination as this
       currentTime: "00:00",
       currentDate: null,
       thisStopRoutes: [],
       thisStopDepartures:[],
       realTimeDepartures: [],
+      realTimeOnwardConnections:[], 
+      onwardConnectionDepartures: [],
       apiData: null,
       intervalId: null,
+      trainStationCRS: "OMS",
+      trainData: null,
 
       timeToggle: true,
       currentTimeTogglePg: 0,
-      loadingDepartures: true
+      loadingDepartures: true,
+
+
+
+      scrollingSection1: 0,
+      scrollingSection2: 0,
     }
   },
   methods: {
@@ -64,7 +89,13 @@ export default {
         });
     },
     setupBoard(){
+      const now = new Date();
       const today = new Date();
+      // Check if the current time is before 3am
+      if (now.getHours() < 3) {
+        // Subtract one day from today
+        today.setDate(today.getDate() - 1);
+      }
       const daysOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
       const currentDayOfWeek = daysOfWeek[today.getDay()];
       console.log("day week: " + currentDayOfWeek);
@@ -78,7 +109,10 @@ export default {
           // Iterate over the routes array for the matched stop
           stop['routes'].forEach(route => {
             // Retrieve the operator for the current route
-            let operator = this.apiData['routes'][route]['operator'];
+            let operator = this.apiData['routes'][route]['operator']
+            if(operator.includes(" ")){
+                operator = this.apiData['routes'][route]['operator'].split(" ")[0] + " " + this.apiData['routes'][route]['operator'].split(" ").slice(1).join("-")
+            }
 
             // Check for an operator override in the stopOverrideData
             const routeOverride = overrides.route_override.find(override => override.route === route);
@@ -102,7 +136,7 @@ export default {
           const runningDays = journeyData['running_days'];
           const noServiceDates = journeyData['no_service_dates'];
 
-          console.log('Checking journey:', journeyData);
+          // console.log('Checking journey:', journeyData);
           if (!noServiceDates.includes(today.toISOString().split('T')[0]) && runningDays[currentDayOfWeek] === 1) {
             const stopTimes = journeyData['stop_times'];
             for (const stopTime of stopTimes) {
@@ -114,8 +148,25 @@ export default {
                   const minute = parseInt(departureTime[1], 10); // Convert minute to number
                   if (!overrideTimes.includes(minute)) { // Now both are numbers
                     console.log('Adding departure:', stopTime);
-                    this.thisStopDepartures.push(stopTime);
+                    const routeNumber = route;
+                    const operator = this.apiData['routes'][route]['operator'];
+                    this.thisStopDepartures.push({
+                      route: routeNumber,
+                      operator: operator,
+                      destination: journeyData['destination'],
+                      departure_time: stopTime['departure_time'].replace(/^24:/, '00:').replace(/^25:/, '01:').replace(/^26:/, '02:').replace(/^27:/, '03:')
+                    });
                   }
+                }else{
+                  console.log('Adding departure:', stopTime);
+                  const routeNumber = route;
+                  const operator = this.apiData['routes'][route]['operator'];
+                  this.thisStopDepartures.push({
+                    route: routeNumber,
+                    operator: operator,
+                    destination: journeyData['destination'],
+                    departure_time: stopTime['departure_time'].replace(/^24:/, '00:').replace(/^25:/, '01:').replace(/^26:/, '02:').replace(/^27:/, '03:')
+                  });
                 }
               }
             }
@@ -124,34 +175,164 @@ export default {
       }
       console.log('Final departures:', this.thisStopDepartures);
 
+      console.log("Starting to process stops");
+      this.onwardConnectionDepartures = [];
+
+      for (const stop of this.apiData['allStops']) {
+        if (stop.stop_name.includes(this.onwardConnectionsStopsName)){
+          console.log(`Stop ${stop.stop_name} matches criteria`);
+          for (const route in this.apiData['routes']) {
+            for (const journey in this.apiData['routes'][route]['journeys']) {
+              const journeyData = this.apiData['routes'][route]['journeys'][journey];
+              const runningDays = journeyData['running_days'];
+              const noServiceDates = journeyData['no_service_dates'];
+
+              if (!noServiceDates.includes(today.toISOString().split('T')[0]) && runningDays[currentDayOfWeek] === 1) {
+                const stopTimes = journeyData['stop_times'];
+                for (const stopTime of stopTimes) {
+                  if (stopTime['stop_name'] === stop.stop_name) {
+                    const stopOverride = overrides.stop_override.find(stop => stop.stop_name === this.thisStop);
+                    if (stopOverride) {
+                      const overrideTimes = stopOverride.min_ph_override; // Assuming this is an array of numbers
+                      const departureTime = stopTime['departure_time'].split(':');
+                      const minute = parseInt(departureTime[1], 10); // Convert minute to number
+                      if (!overrideTimes.includes(minute)) { // Now both are numbers
+                        console.log('Adding departure:', stopTime);
+                        const routeNumber = route;
+                        const operator = this.apiData['routes'][route]['operator'];
+                        this.onwardConnectionDepartures.push({
+                          route: routeNumber,
+                          operator: operator,
+                          destination: journeyData['destination'],
+                          departure_time: stopTime['departure_time'].replace(/^24:/, '00:').replace(/^25:/, '01:').replace(/^26:/, '02:').replace(/^27:/, '03:')
+                        });
+                      }
+                    }else{
+                      console.log('Adding departure:', stopTime);
+                      const routeNumber = route;
+                      const operator = this.apiData['routes'][route]['operator'];
+                      this.onwardConnectionDepartures.push({
+                        route: routeNumber,
+                        operator: operator,
+                        destination: journeyData['destination'],
+                        departure_time: stopTime['departure_time'].replace(/^24:/, '00:').replace(/^25:/, '01:').replace(/^26:/, '02:').replace(/^27:/, '03:')
+                      });
+                    }
+                  }
+                }
+              }else{
+                console.log("No service today", route);
+              }
+            }
+          }
+        } else {
+          console.log(`Stop ${stop.stop_name} does not match criteria`);
+        }
+      }
+
+      if (this.onwardConnectionDepartures.length === 0) {
+        console.log("No onward connections found. Check if journey data, dates, and stop names are correct.");
+}else{
+  console.log("onward connections: ", this.onwardConnectionDepartures);
+}
+
 
       this.loadingDepartures = false;
       this.updateBoard();
     },
-    updateBoard(){
-      setInterval(() => {
-        this.realTimeDepartures = [];
-        this.thisStopDepartures.forEach((departure) => {
-          var departureTime = new Date(departure.departure_time);
-          var currentTime = new Date();
-          if (departureTime > currentTime) {
-            // Departure is in the future
-            const timeDifference = Math.floor((departureTime - currentTime) / 1000 / 60);
-            this.realTimeDepartures.push({route: departure.route, time: departureTime});
-            console.log(`Next departure in ${timeDifference} minutes: ${departure.route}`);
+    updateLogic(){
+      this.realTimeDepartures = [];
+      this.realTimeOnwardConnections = [];
+      const currentTime = new Date();
+      console.log('Current Time:', currentTime);
+
+      this.thisStopDepartures.forEach((departure) => {
+        if (typeof departure['departure_time'] === 'string') {
+          const departureTime = new Date(currentTime);
+          const timeParts = departure['departure_time'].split(':');
+          departureTime.setHours(parseInt(timeParts[0], 10), parseInt(timeParts[1], 10), 0, 0);
+
+          const minutesTo = Math.floor((departureTime - currentTime) / 60000);
+          let displayOperator = departure['operator'];
+
+          if(displayOperator.includes(" ")){
+                displayOperator = departure['operator'].split(" ")[0] + " " + departure['operator'].split(" ").slice(1).join("-")
+            }
+
+          if (departureTime >= currentTime) {
+            if (!departure['destination'].includes(this.filteredDestination)){
+              this.realTimeDepartures.push({
+                route: departure['route'],
+                departureTime: departure['departure_time'].replace(/^24:/, '00:').replace(/^25:/, '01:').replace(/^26:/, '02:').replace(/^27:/, '03:'),
+                minutesTo: minutesTo,
+                displayOperator: displayOperator,
+                operator: departure['operator'],
+                destination: departure['destination'] 
+              });
+              this.realTimeDepartures.sort((a, b) => a.departureTime.localeCompare(b.departureTime));
+            }
+            console.log('Adding real-time departure:', departure);
           }
-        });
+        } else {
+          console.log('Skipping departure due to undefined departure_time:', departure);
+        }
+      });
+
+      console.log("real time departures", this.realTimeDepartures);
+
+      this.onwardConnectionDepartures.forEach((departure) => {
+        if (typeof departure['departure_time'] === 'string') {
+          const departureTime = new Date(currentTime);
+          const timeParts = departure['departure_time'].split(':');
+          departureTime.setHours(parseInt(timeParts[0], 10), parseInt(timeParts[1], 10), 0, 0);
+          
+          const minutesTo = Math.floor((departureTime - currentTime) / 60000);
+          let displayOperator = departure['operator'];
+
+          if(displayOperator.includes(" ")){
+            displayOperator = departure['operator'].split(" ")[0] + " " + departure['operator'].split(" ").slice(1).join("-")
+          }
+
+          if (departureTime >= currentTime) {
+            if (!departure['destination'].includes(this.filteredDestination)) {
+                this.realTimeOnwardConnections.push({
+                  route: departure['route'],
+                  departureTime: departure['departure_time'].replace(/^24:/, '00:').replace(/^25:/, '01:').replace(/^26:/, '02:').replace(/^27:/, '03:'),
+                  minutesTo: minutesTo,
+                  displayOperator: displayOperator,
+                  operator: departure['operator'],
+                  destination: departure['destination'] 
+                });
+                this.realTimeDepartures.sort((a, b) => a.departureTime.localeCompare(b.departureTime));
+            }
+            console.log('Adding real-time onward departure:', departure);
+          }
+        } else {
+          console.log('Skipping departure due to undefined departure_time:', departure);
+        }
+      });
+
+      console.log("real time onward connections", this.realTimeOnwardConnections);
+
+
+
+
+    },
+    updateBoard(){
+      this.updateLogic();
+      setInterval(() => {
+        this.updateLogic();
       }, 60000)
     },
     currentTimeLoop(){
       setInterval(() => {
-        let date = new Date();
-        let hours = date.getHours();
-        let minutes = date.getMinutes();
-        let day = date.getDate();
-        let month = date.getMonth() + 1;
-        this.currentTime = `${hours}:${minutes}`;
-        this.currentDate = `${day}/${month}`;
+      let date = new Date();
+      let hours = date.getHours();
+      let minutes = date.getMinutes();
+      let day = date.getDate();
+      let month = date.getMonth() + 1;
+      this.currentTime = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+      this.currentDate = `${day}/${month}`;
       }, 1000);
 
     },
@@ -194,12 +375,27 @@ export default {
           this.currentTimeTogglePg = 0;
         }
       }, 15000);
+    },
+    scrollingSections(){
+      setInterval(() => {
+        this.sleep(5000)
+        .then(() => {
+          this.scrollingSection1 = 0;
+          this.scrollingSection2 = 1;
+          this.sleep(5000)
+          .then(() => {
+            this.scrollingSection1 = 0;
+            this.scrollingSection2 = 0;
+          })
+        });
+      }, 10000);
     }
   },
   mounted() {
       this.fetchData();  // Fetch data immediately on mount
       this.currentTimeLoop();
       this.timeToggler();
+      this.scrollingSections();
       // Set up any other necessary intervals or events...
   }
 }
@@ -328,5 +524,102 @@ export default {
 
 .departures-section{
   height: 100%;
+  padding-top: 2rem;
+  padding-left: 1.5rem;
+  padding-right: 1.5rem;
+  padding-bottom: 1.5rem;
 }
+
+.departures-list{
+  display: flex;
+  gap: 1rem;
+  flex-direction: column;
+}
+
+.departure{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1.5rem;
+  border-bottom: 1px solid rgb(30,30,30);
+  padding-bottom: 1.5rem;
+}
+
+.departure .center{
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.departure .center .scrolling-section-1 h5{
+  font-size: 0.85rem;
+}
+
+.departure .center .destination{
+  font-size: 2em;
+  text-align: left;
+  font-weight: 600;
+}
+
+.departure .times h5{
+  font-size: 1.5em;
+  text-align: right;
+}
+
+.departure .times{
+  width: 20%;
+  height: 100%;
+}
+
+
+.departure h2, .departure h4{
+  color: white;
+}
+
+.departure h2{
+  font-size: 3em;
+  padding: 0.3rem;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+  border-radius: 0.3rem;
+  display: inline-block;
+}
+
+.departure .route{
+  font-size: 2.5em;
+}
+
+.departure .operator{
+  font-style: italic;
+  color: rgb(150,150,150);
+}
+
+.departure h5{
+  color: white;
+  opacity: 0;
+  transition: 0.5s;
+}
+
+.departure .active{
+  opacity: 1;
+}
+
+.times h5{
+  position: absolute;
+  top: 0%;
+  right: 0%;
+}
+
+.times .minutes{
+  position: relative;
+}
+
+.times{
+  position: relative;
+}
+
+.scrolling-section{
+  position: relative;
+}
+
 </style>

@@ -8,6 +8,10 @@
     "routes_to_include": ["2A", "337", "312", "311", "EL1", "5", "6", "152", "375", "385", "310"],
     "no_tracking_routes": ["2A", "337", "312", "311", "5", "6", "152", "375", "385", "310"],
     "real_time_slice_amount": 3,
+    "thisStopCoords": {
+        "latitude": 53.558666, 
+        "longitude": -2.873524
+    },
 
     "thisStop": "Edge Hill University",
     "displayName": "Edge Hill (Forest Court)",

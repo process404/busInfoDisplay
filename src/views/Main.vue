@@ -31,7 +31,7 @@
             <div class="scrolling-section">
               <h5 class="operator" :class="{active : scrollingSection1 == 0 || departure.minutesTo > 10}">{{ departure.operator }}</h5>
               <h5 class="tracking-info" :class="{active : scrollingSection1 == 1 && departure.minutesTo < 10}">
-                {{this.realTimeTrackingUpdates.find(tracking => tracking.departureTime === departure.departureTime) ? this.realTimeTrackingUpdates.find(tracking => tracking.departureTime === departure.departureTime).trackingData : ''}}
+                {{this.realTimeTrackingUpdates.find(tracking => tracking.dep_time === departure.departureTime) ? this.realTimeTrackingUpdates.find(tracking => tracking.dep_time === departure.departureTime).trackingData : ''}}
               </h5>
             </div>
           </div>
@@ -703,6 +703,13 @@ export default {
 
 .scrolling-section{
   position: relative;
+}
+
+.tracking-info{
+  position: absolute;
+  top: 0%;
+  width: 100%;
+  left: 0%;
 }
 
 </style>

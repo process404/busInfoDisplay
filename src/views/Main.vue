@@ -31,7 +31,7 @@
             <div class="scrolling-section">
               <h5 class="operator" :class="{active : scrollingSection1 == 0 || departure.minutesTo > 10}">{{ departure.operator }}</h5>
               <h5 class="tracking-info" :class="{active : scrollingSection1 == 1 && departure.minutesTo < 10}">
-                {{this.realTimeTrackingUpdates.find(tracking => tracking.departureTime === departure.departureTime)?.trackingData}}
+                {{this.realTimeTrackingUpdates.find(tracking => tracking.departureTime === departure.departureTime) ? this.realTimeTrackingUpdates.find(tracking => tracking.departureTime === departure.departureTime).trackingData : ''}}
               </h5>
             </div>
           </div>
@@ -50,15 +50,17 @@
 import axios from 'axios';
 import overrides from '@/assets/stop_override.json';
 
-const min_lat = 53.55
-const max_lat = 53.57
-const min_long = -2.89
-const max_long = -2.87
-const bannedOnwardConnectionStop = "Bus Station (Stand 0)"
-const timetables = ['../src/assets/itm_north_west_gtfs.zip']
-const routes_to_include = ['2A', '337', '312', '311', 'EL1', '5', '6', '152', '375', '385', '310']
-const no_tracking_routes = ['2A', '337', '312', '311', '5', '6', '152', '375', '385', '310']
-const realTimeSliceAmount = 3
+import config from '@/assets/config.json';
+
+const min_lat = config.min_lat;
+const max_lat = config.max_lat;
+const min_long = config.min_long;
+const max_long = config.max_long;
+const banned_onward_connection_stop = config.excludedOnwardConnectionStop;
+const timetables = config.timetables;
+const routes_to_include = config.routes_to_include;
+const no_tracking_routes = config.no_tracking_routes;
+const real_time_slice_amount = config.real_time_slice_amount;
 
 export default {
   data() {
@@ -90,7 +92,7 @@ export default {
 
       scrollingSection1: 0,
       scrollingSection2: 0,
-      realTimeSliceAmount: realTimeSliceAmount,
+      realTimeSliceAmount: real_time_slice_amount,
     }
   },
   methods: {
@@ -101,7 +103,7 @@ export default {
           max_lat: max_lat,
           min_long: min_long,
           max_long: max_long,
-          bannedOnwardConnectionStop: bannedOnwardConnectionStop,
+          banned_onward_connection_stop: banned_onward_connection_stop,
           zip_path: timetables[0],
           routes_to_include: routes_to_include
         }
@@ -291,7 +293,7 @@ export default {
       this.setupTracking();
     },
     async setupTracking(){
-      const departures = this.realTimeDepartures.slice(0, realTimeSliceAmount);
+      const departures = this.realTimeDepartures.slice(0, this.realTimeSliceAmount);
       for (const departure of departures) {
         var data = await this.getTrackingData(departure.route);
         console.log("data", data);  

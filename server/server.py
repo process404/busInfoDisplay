@@ -11,6 +11,8 @@ CORS(app)  # Enable CORS
 
 
 def process_gtfs(zip_path, lat_min, lat_max, long_min, long_max, banned_stop, route_id_array):
+
+    print(banned_stop)
     # Boundaries in case of duplicates in the region of the gtfs file
     filter_lat_min, filter_lat_max = lat_min, lat_max
     filter_long_min, filter_long_max = long_min, long_max
@@ -100,7 +102,7 @@ def process_gtfs(zip_path, lat_min, lat_max, long_min, long_max, banned_stop, ro
                 all_stops[stop_name]['routes'].add(route_name)
 
     # Convert all_stops to the required list format and include route names as a list
-    all_stops_list = [{'stop_name': k, 'routes': list(v['routes'])} for k, v in all_stops.items() if k.lower() != banned_stop.lower()]
+    all_stops_list = [{'stop_name': k, 'routes': list(v['routes'])} for k, v in all_stops.items() if banned_stop is not None and k.lower() != banned_stop.lower()]
 
     # Combine routes_json and all_stops_list into the final structure
     final_structure = {"routes": routes_json, "allStops": all_stops_list}
@@ -116,7 +118,7 @@ def get_gtfs_data():
     lat_max = float(request.args.get('max_lat'))
     long_min = float(request.args.get('min_long'))
     long_max = float(request.args.get('max_long'))
-    banned_stop = request.args.get('bannedOnwardConnectionStop')
+    banned_stop = request.args.get('banned_onward_connection_stop')
     routes_to_include = request.args.getlist('routes_to_include[]')
 
     print(zip_path, lat_min, lat_max, long_min, long_max, banned_stop,  routes_to_include)

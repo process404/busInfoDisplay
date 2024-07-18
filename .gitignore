@@ -26,3 +26,5 @@ pnpm-debug.log*
 .zip
 
 stop_overrides.json
+
+itm_north_west_gtfs.zip

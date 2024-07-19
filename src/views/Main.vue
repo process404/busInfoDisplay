@@ -24,23 +24,45 @@
         <span class="loader"></span>
       </div>
       <div class="departures-list">
-        <div v-for="(departure, index) in this.realTimeDepartures.slice(0,this.realTimeSliceAmount)" :key="index" class="departure">
-          <h2 :class="departure.displayOperator" class="route">{{ departure.route }}</h2>
+        <div v-for="(departure, index) in realTimeDepartures.slice(0, realTimeSliceAmount)" :key="index" class="departure" :class="{onwardSlice : index >= onwardConnectionsSlicer}, {onwardHide : onwardConnectionsHide == true && index >= onwardConnectionsSlicer}" >
+          <div>
+            <h2 :class="departure.displayOperator" class="route">{{ departure.route }}</h2>
+            <h2 class="route-placeholder">{{departure.route}}</h2>
+          </div>
           <div class="center">
             <h4 class="destination">{{ departure.destination }}</h4>
             <div class="scrolling-section">
-              <h5 class="operator" :class="{active : scrollingSection1 == 0 || departure.minutesTo > 10}">{{ departure.operator }}</h5>
-              <h5 class="tracking-info" :class="{active : scrollingSection1 == 1 && departure.minutesTo < 10}">
-                {{this.realTimeTrackingUpdates.find(tracking => tracking.dep_time === departure.departureTime) ? this.realTimeTrackingUpdates.find(tracking => tracking.dep_time === departure.departureTime).trackingData : ''}}
+              <h5 class="operator" :class="{active : departure.minutesTo > 10 || this.noTrackingData || this.realTimeTrackingUpdates.length == 0}">{{ departure.operator }}</h5>
+              <h5 class="tracking-info" :class="{active : departure.minutesTo <= 10 && this.realTimeTrackingUpdates.length != 0 && !this.noTrackingData}">
+                <div class="line-tracker">
+                  <span class="line">
+                    <span class="ball">  <h3 class="origin_time">{{ departure.origin_time.slice(0,5) }}</h3></span>
+                    <span class="ball-track" :style="{ left: index === 0 ? calculateLeftPosition(departure) : '' }"></span>
+                    <span class="ball-end">  <h3 class="arrival_time">{{ departure.departureTime.slice(0,5) }}</h3></span>
+                  </span>
+                </div>
+                <!-- {{this.realTimeTrackingUpdates.find(tracking => tracking.dep_time === departure.departureTime) ? this.realTimeTrackingUpdates.find(tracking => tracking.dep_time === departure.departureTime).distance : ''}} -->
               </h5>
             </div>
           </div>
+          <div></div>
           <div class="times">
             <h5 class="minutes" :class="{active : scrollingSection2 == 0}">{{ departure.minutesTo }} min</h5>
             <h5 class="departure_time" :class="{active : scrollingSection2 == 1}">{{ departure.departureTime.slice(0,5) }}</h5>
           </div>
         </div>
       </div>
+      <div v-if="this.realTimeDepartures.length == 0 && !loadingDepartures" class="no-departures">
+        <h2>No departures found</h2>
+      </div>
+    </div>
+    <div>
+    <div class="connections-list" :class="{ connectionsDisplay: this.onwardConnectionsDisplay}, { connectionsActive : this.onwardConnectionsActive}">
+      <div class="header">
+        <h2>Onward Connections</h2>
+        <h3>{{this.onwardConnectionsStopsDisplay}}</h3>
+      </div>
+    </div>
     </div>
   </div>
 </template>
@@ -61,16 +83,17 @@ const timetables = config.timetables;
 const routes_to_include = config.routes_to_include;
 const no_tracking_routes = config.no_tracking_routes;
 const real_time_slice_amount = config.real_time_slice_amount;
-const GracePeriodTime = 2 // minutes
+const GracePeriodTime = config.grace_period_time // minutes
+const WithinRadiusGrace = config.within_radius_grace // minutes
 
 export default {
   data() {
     return {
-      thisStop: "Edge Hill University",
-      displayName: "Edge Hill (Forest Court)",
-      onwardConnectionsStopsName: "Bus Station",
-      onwardConnectionsStopsDisplay: "Ormskirk Bus Station",
-      filteredDestination: "Ormskirk", // Exclude buses with destination as this
+      thisStop: config.thisStop,
+      displayName: config.displayName,
+      onwardConnectionsStopsName: config.onwardConnectionsStopsName,
+      onwardConnectionsStopsDisplay: config.onwardConnectionsStopsDisplay,
+      filteredDestination: config.filteredDestination,
       currentTime: "00:00",
       currentDate: null,
       thisStopRoutes: [],
@@ -80,20 +103,24 @@ export default {
       onwardConnectionDepartures: [],
       apiData: null,
       intervalId: null,
-      trainStationCRS: "OMS",
+      trainStationCRS: config.trainStationCRS,
       trainData: null,
+      GracePeriodStorage: GracePeriodTime,
 
       realTimeTrackingUpdates: [],
 
       timeToggle: true,
       currentTimeTogglePg: 0,
       loadingDepartures: true,
-
-
+      onwardConnectionsSlicer: real_time_slice_amount,
+      onwardConnectionsHide: false,
+      onwardConnectionsDisplay: false,
+      onwardConnectionsActive: false,
 
       scrollingSection1: 0,
       scrollingSection2: 0,
       realTimeSliceAmount: real_time_slice_amount,
+      noTrackingData: false,
     }
   },
   methods: {
@@ -220,6 +247,7 @@ export default {
                     const routeNumber = route;
                     const operator = this.apiData['routes'][route]['operator'];
                     this.thisStopDepartures.push({
+                      origin_time: stopTimes[0]['departure_time'].replace(/^24:/, '00:').replace(/^25:/, '01:').replace(/^26:/, '02:').replace(/^27:/, '03:'),
                       route: routeNumber,
                       operator: operator,
                       destination: journeyData['destination'],
@@ -231,6 +259,7 @@ export default {
                   const routeNumber = route;
                   const operator = this.apiData['routes'][route]['operator'];
                   this.thisStopDepartures.push({
+                    origin_time: stopTimes[0]['departure_time'].replace(/^24:/, '00:').replace(/^25:/, '01:').replace(/^26:/, '02:').replace(/^27:/, '03:'),
                     route: routeNumber,
                     operator: operator,
                     destination: journeyData['destination'],
@@ -270,6 +299,7 @@ export default {
                         const routeNumber = route;
                         const operator = this.apiData['routes'][route]['operator'];
                         this.onwardConnectionDepartures.push({
+                          origin_time: stopTimes[0]['departure_time'].replace(/^24:/, '00:').replace(/^25:/, '01:').replace(/^26:/, '02:').replace(/^27:/, '03:'),
                           route: routeNumber,
                           operator: operator,
                           destination: journeyData['destination'],
@@ -312,6 +342,7 @@ export default {
     },
     async setupTracking(){
       const departures = this.realTimeDepartures.slice(0, this.realTimeSliceAmount);
+      this.realTimeTrackingUpdates = [];
 
       for (const departure of departures) {
         var data = await this.getTrackingData(departure.route);
@@ -322,8 +353,10 @@ export default {
             dep_time: departure.departureTime,
             status: data.status,
             distance: data.distance,
-            time_estimate: data.time_estimate,
-            journey_percent: data.journey_percent,
+            time_estimate: data.estimated_time,
+            percentage: data.percentage,
+            towardsStop: data.towardsStop,
+            withinRadius: data.withinRadius
           });
         } else {
           console.error('Error fetching tracking data for route:', departure.route);
@@ -333,12 +366,48 @@ export default {
             status: 'No data available',
             distance: "No data available",
             time_estimate: "No data available",
-            journey_percent: "No data available",
+            towardsStop: false,
+            withinRadius: false,
+            percentage: "0",
           });
         }
-        
       }
-      console.log("Tracking updates:", this.realTimeTrackingUpdates);
+      console.log("Tracking updates for bus: ", this.realTimeTrackingUpdates);
+
+      setInterval(async () => {
+        this.realTimeTrackingUpdates = [];
+        for (const departure of departures) {
+          var data = await this.getTrackingData(departure.route);
+          console.log("data", data);  
+          if (data) {
+            this.realTimeTrackingUpdates.push({
+              route: departure.route,
+              dep_time: departure.departureTime,
+              status: data.status,
+              distance: data.distance,
+              time_estimate: data.estimated_time,
+              percentage: data.percentage,
+              towardsStop: data.towardsStop,
+              withinRadius: data.withinRadius
+            });
+          } else {
+            console.error('Error fetching tracking data for route:', departure.route);
+            this.realTimeTrackingUpdates.push({
+              route: departure.route,
+              dep_time: departure.departureTime,
+              status: 'No data available',
+              distance: "No data available",
+              time_estimate: "No data available",
+              towardsStop: false,
+              withinRadius: false,
+              percentage: "0",
+            });
+          }
+        }
+        console.log("Tracking updates for bus: ", this.realTimeTrackingUpdates);
+      }, 60000);
+      
+
     },
     updateLogic(){
       this.realTimeDepartures = [];
@@ -359,13 +428,16 @@ export default {
                 displayOperator = departure['operator'].split(" ")[0] + " " + departure['operator'].split(" ").slice(1).join("-")
             }
 
-          const GracePeriod = GracePeriodTime * 60 * 1000; // 5 minutes in milliseconds
+          const GracePeriod = this.GracePeriodStorage * 60 * 1000; // 5 minutes in milliseconds
 
           const timeDifference = departureTime.getTime() - currentTime.getTime();
+
+            
 
           if (timeDifference >= -GracePeriod) {
             if (!departure['destination'].includes(this.filteredDestination)){
               this.realTimeDepartures.push({
+                origin_time: departure['origin_time'].replace(/^24:/, '00:').replace(/^25:/, '01:').replace(/^26:/, '02:').replace(/^27:/, '03:'),
                 route: departure['route'],
                 departureTime: departure['departure_time'].replace(/^24:/, '00:').replace(/^25:/, '01:').replace(/^26:/, '02:').replace(/^27:/, '03:'),
                 minutesTo: minutesTo,
@@ -401,6 +473,7 @@ export default {
           if (departureTime >= currentTime) {
             if (!departure['destination'].includes(this.filteredDestination)) {
                 this.realTimeOnwardConnections.push({
+                  origin_time: departure['origin_time'].replace(/^24:/, '00:').replace(/^25:/, '01:').replace(/^26:/, '02:').replace(/^27:/, '03:'),
                   route: departure['route'],
                   departureTime: departure['departure_time'].replace(/^24:/, '00:').replace(/^25:/, '01:').replace(/^26:/, '02:').replace(/^27:/, '03:'),
                   minutesTo: minutesTo,
@@ -493,16 +566,92 @@ export default {
         });
       }, 10000);
 
-      setInterval(() => {
-        this.sleep(5000)
-        .then(() => {
-          this.scrollingSection1 = 1;
-          this.sleep(5000)
+      // setInterval(() => {
+      //   this.sleep(5000)
+      //   .then(() => {
+      //     this.scrollingSection1 = 1;
+      //     this.sleep(25000)
+      //     .then(() => {
+      //       this.scrollingSection1 = 0;
+      //     })
+      //   });
+      // }, 30000);
+
+      if(this.onwardConnectionDepartures && this.realTimeOnwardConnections){
+        setInterval(() => {
+          this.sleep(20000)
           .then(() => {
-            this.scrollingSection1 = 0;
-          })
-        });
-      }, 10000);
+            this.onwardConnectionsHide = true;
+            this.sleep(1000)
+            .then(() => {
+              this.onwardConnectionsSlicer = 3;
+              this.onwardConnectionsDisplay = true;
+              this.sleep(1000)
+              .then(() => {
+                this.onwardConnectionsActive = true;
+                this.sleep(20000)
+                .then(() => {
+                    this.onwardConnectionsActive = false;
+                    this.sleep(1000)
+                    .then(() => { 
+                      this.onwardConnectionsDisplay = false;
+                      this.onwardConnectionsSlicer = real_time_slice_amount;
+                      this.sleep(1000)
+                      .then(() => {
+                        this.onwardConnectionsHide = false;
+                      })
+                    })
+                })
+              })
+            })
+          });
+        }, 44000);
+      }
+    },
+    calculateLeftPosition(departure){
+      // Ensure realTimeTrackingUpdates is defined and departure has a departureTime
+      if (!this.realTimeTrackingUpdates || !departure || !departure.departureTime) {
+        return "50%"; // Default position if data is not available
+      }
+
+      const tracking = this.realTimeTrackingUpdates.find(t => t.dep_time === departure.departureTime);
+      console.log("TRACKING", tracking);
+
+      if (tracking) {
+        if (tracking.distance == "No data available"){
+          this.noTrackingData = true;
+        }else{
+          this.noTrackingData = false;
+        }
+
+        if (tracking.towardsStop) {
+          const percent = tracking.percentage;
+          console.log("percent", percent);
+          console.log("within radius ", tracking.withinRadius);
+          if(tracking.withinRadius){
+            this.GracePeriodStorage = WithinRadiusGrace;
+            return "95.25%";
+          }else{
+            this.GracePeriodStorage = GracePeriodTime
+            if(percent == 0){
+              return "-8px";
+            }else{
+              return percent + "%";
+            }
+          }
+        } else {
+          if(tracking.withinRadius){
+            this.GracePeriodStorage = WithinRadiusGrace;
+            return "95.25%";
+          }else{
+            this.GracePeriodStorage = GracePeriodTime
+            return "-8px";
+          }
+        } 
+      } else {
+        // If no tracking data matches, return "50%"
+        return "-8px";
+      }
     }
   },
   mounted() {
@@ -526,7 +675,8 @@ export default {
 }
 
 .top-bar{
-  height: 8%;
+  height: 73px;
+  min-height: 73px;
   width: 100%;
   border-bottom: 2px solid white;
   display: flex;
@@ -637,11 +787,12 @@ export default {
 }
 
 .departures-section{
-  height: 100%;
+  height: auto;
   padding-top: 2rem;
   padding-left: 1.5rem;
   padding-right: 1.5rem;
   padding-bottom: 1.5rem;
+  min-height: 40%;
 }
 
 .departures-list{
@@ -657,6 +808,8 @@ export default {
   gap: 1.5rem;
   border-bottom: 1px solid rgb(30,30,30);
   padding-bottom: 1.5rem;
+  position: relative;
+  transition: 0.5s
 }
 
 .departure .center{
@@ -701,11 +854,22 @@ export default {
 
 .departure .route{
   font-size: 2.5em;
+  position: absolute;
+  top: 0;
+}
+
+.departure .route-placeholder{
+  font-size: 2.5em;
+  position: relative;
+  opacity: 0;
+  visibility: hidden;
 }
 
 .departure .operator{
   font-style: italic;
   color: rgb(150,150,150);
+  position: absolute;
+  top: 0;
 }
 
 .departure h5{
@@ -737,10 +901,156 @@ export default {
 }
 
 .tracking-info{
-  position: absolute;
+  position: relative;
   top: 0%;
   width: 100%;
   left: 0%;
+  height: 1rem;
+  transition: 0.5s;
+  border: 1px solid rgb(50,50,50);
+  margin-top: 1rem;
+  border-radius: 0.3rem;
+  padding-top: 0.7rem;
+  padding-left: 2rem;
+  padding-right: 2rem;
 }
+
+.tracking-info.active{
+  height: 5rem;
+}
+
+.onwardSlice {
+  display: none;
+}
+
+.onwardHide{
+  opacity: 0;
+}
+
+.connections-list{
+  display: none;
+  opacity: 0;
+  transition: 0.5s;
+  gap: 1rem;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  padding-left: 1.5rem;
+  padding-right: 1.5rem;
+}
+
+.connections-list .header{
+  color: white;
+  font-size: 1.5em;
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-top: 2px solid white;
+  border-bottom: 2px solid white;
+  height: 73px;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  display: flex;
+  padding-left: 1.5rem;
+  padding-right: 1.5rem;
+}
+
+.header h3{
+  font-size: 0.7em;
+  font-style: italic;
+  color: rgb(150,150,150)
+}
+
+.connections-list.connectionsDisplay{
+  display: flex;
+}
+
+.connections-list.connectionsActive{
+  opacity: 1;
+}
+
+.line-tracker{
+  width: 100%;
+  height: 50%;
+  position: relative;
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+.line-tracker .line{
+  width: 100%;
+  height: 2px;
+  background: rgb(134, 134, 134);
+  position: absolute;
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%);
+}
+
+.line-tracker .line .ball{
+  width: 10px;
+  height: 10px;
+  background: rgb(255, 255, 255);
+  border-radius: 50%;
+  position: absolute;
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%);
+}
+
+.line-tracker .line .ball-end{
+  width: 10px;
+  height: 10px;
+  background: rgb(255, 255, 255);
+  border-radius: 50%;
+  position: absolute;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+}
+
+.line-tracker .line .ball-track{
+  width: 25px;
+  height: 25px;
+  background: rgb(0, 0, 0);
+  border: 3px solid white;
+  border-radius: 50%;
+  position: absolute;
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%);
+  transition: 1.5s;
+  z-index: 200;
+}
+
+.origin_time{
+  font-size: 0.8em;
+  transform: translate(-30%, 100%);
+  display: inline-block;
+  position: absolute;
+}
+
+.arrival_time{
+  font-size: 0.8em;
+  transform: translate(-30%, 100%);
+  display: inline-block;
+  position: absolute;
+}
+
+.no-departures h2{
+  color: white;
+  font-size: 2em;
+  text-align: center;
+}
+
+.no-departures{
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  
+}
+
 
 </style>

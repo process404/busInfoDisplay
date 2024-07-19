@@ -7,17 +7,14 @@
     "timetables": ["../src/assets/itm_north_west_gtfs.zip"],
     "routes_to_include": ["2A", "337", "312", "311", "EL1", "5", "6", "152", "375", "385", "310"],
     "no_tracking_routes": ["2A", "337", "312", "311", "5", "6", "152", "375", "385", "310"],
-    "real_time_slice_amount": 3,
-    "thisStopCoords": {
-        "latitude": 53.558666, 
-        "longitude": -2.873524
-    },
-
+    "real_time_slice_amount": 4,
     "thisStop": "Edge Hill University",
     "displayName": "Edge Hill (Forest Court)",
     "onwardConnectionsStopsName": "Bus Station",
     "onwardConnectionsStopsDisplay": "Ormskirk Bus Station",
     "filteredDestination": "Ormskirk",
-    "trainStationCRS": "OMS"
+    "trainStationCRS": "OMS",
+    "grace_period_time":5,
+    "within_radius_grace":8
     
 }

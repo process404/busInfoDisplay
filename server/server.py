@@ -230,10 +230,10 @@ def get_tracking_data():
         bearing_to_stop = calculate_bearing(float(latitude), float(longitude), float(this_stop_lat), float(this_stop_long))
         bus_bearing = extract_bearing_from_xml(response_xml)
         # Define a tolerance for bearing comparison
-        bearing_tolerance = 60 # degrees
+        bearing_tolerance = 90 # degrees
 
         meters = distance * 1000
-        estimated_time = (distance / 40) * 60 # minutes
+        estimated_time = (distance / 30) * 60 # distance / speed (kmh) * distance
 
         # Ensure meters is not negative
         meters = max(meters, 0)
@@ -243,13 +243,21 @@ def get_tracking_data():
             percentage = (1 - (meters / 1000)) * 100
 
         towardsStop = False
+        withinRadius = False
 
         if abs(bearing_to_stop - bus_bearing) <= bearing_tolerance:
             print("The bus is moving towards the bus stop.")
             towardsStop = True
+            withinRadius = False
         else:
             print("The bus is moving away from the bus stop.")
-            towardsStop = False
+
+            if meters <= 220:
+                towardsStop = True
+                withinRadius = True
+            else:
+                towardsStop = False
+                withinRadius = False
         
         finalJson = {
             "latitude": latitude,
@@ -257,7 +265,8 @@ def get_tracking_data():
             "distance": meters,
             "estimated_time": estimated_time,
             "percentage": percentage,
-            "towardsStop": towardsStop  
+            "towardsStop": towardsStop  ,
+            "withinRadius":withinRadius
         }
 
     

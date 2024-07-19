@@ -973,9 +973,7 @@ export default {
 .line-tracker{
   width: 100%;
   height: 50%;
-  position: relative;
-  padding-left: 1rem;
-  padding-right: 1rem;
+  position: relative; 
 }
 
 .line-tracker .line{
